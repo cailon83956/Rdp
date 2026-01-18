@@ -1,40 +1,59 @@
-name: Debug with SSH (tmate + Tailscale via Auth Key)
-
+name: Create Ubuntu droplet with Tailscale
 on:
-  workflow_dispatch:  # Chạy thủ công từ tab Actions
+  workflow_dispatch:
 
 jobs:
-  debug:
+  create-droplet:
     runs-on: ubuntu-latest
+    env:
+      DO_TOKEN: ${{ secrets.DO_TOKEN }}
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}   # ✅ ĐÚNG TÊN
+      SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+      DROPLET_NAME: github-tailscale-1
+      REGION: sgp1
+      SIZE: s-1vcpu-1gb
+      IMAGE: ubuntu-22-04-x64
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # Kết nối Tailscale dùng auth key (TAILSCALE_AUTH_KEY)
-      - name: Connect to Tailscale network (using Auth Key)
-        uses: tailscale/github-action@v4
-        with:
-          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}   # Secret tên TAILSCALE_AUTH_KEY
-          tags: tag:ci-github                          # Thay bằng tag bạn gắn cho key
-          # Optional: ping máy trong tailnet để chờ kết nối ổn định (thay IP/hostname)
-          ping: 100.x.x.x, ten-may.tailnet.ts.net
-          # statedir: /tmp/tailscale-state            # Uncomment nếu dùng Tailnet Lock
-
-      # Kiểm tra Tailscale đã up và kết nối OK (optional, debug)
-      - name: Check Tailscale status
+      - name: Install doctl
         run: |
-          tailscale status
-          tailscale ip -4
-          tailscale ping 100.x.x.x   # ping máy bạn để test kết nối
+          curl -sL https://github.com/digitalocean/doctl/releases/latest/download/doctl-1.93.0-linux-amd64.tar.gz | tar -xz
+          sudo mv doctl /usr/local/bin/doctl
+          doctl version
 
-      # Setup tmate session để SSH debug trực tiếp
-      - name: Setup tmate session (SSH debug)
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: true   # Chỉ bạn (người trigger) mới connect được
-          detached: false               # Giữ job chờ bạn connect và debug
-          # timeout-minutes: 0          # Uncomment nếu muốn session kéo dài (max 6h job)
+      - name: Build cloud-init user-data
+        run: |
+          cat > user-data.yaml <<YML
+          #cloud-config
+          users:
+            - name: ubuntu
+              sudo: ALL=(ALL) NOPASSWD:ALL
+              shell: /bin/bash
+              ssh_authorized_keys:
+                - ${SSH_PUBLIC_KEY}
 
-      # Optional: step chạy sau khi bạn debug xong (nếu cần)
-      # - name: Example after debug
-      #   run: echo "Debug xong, runner sẽ disconnect Tailscale tự động"
+          runcmd:
+            - apt-get update
+            - apt-get install -y curl gnupg apt-transport-https openssh-server
+            - curl -fsSL https://tailscale.com/install.sh | sh
+            - systemctl enable --now tailscaled
+            - tailscale up --authkey ${TAILSCALE_AUTHKEY} --hostname ${DROPLET_NAME}
+            - systemctl enable --now ssh
+          YML
+
+      - name: Create droplet (doctl)
+        run: |
+          export DIGITALOCEAN_ACCESS_TOKEN="${DO_TOKEN}"
+          doctl auth init -t "$DIGITALOCEAN_ACCESS_TOKEN"
+          doctl compute droplet create ${DROPLET_NAME} \
+            --region ${REGION} \
+            --size ${SIZE} \
+            --image ${IMAGE} \
+            --user-data-file user-data.yaml \
+            --tag-names tailscale,github-action \
+            --wait \
+            --format ID,Name,PublicIPv4
+
+      - name: Show droplet list
+        run: |
+          doctl compute droplet list --tag-name tailscale --format ID,Name,PublicIPv4,Status
