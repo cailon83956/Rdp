@@ -1,0 +1,52 @@
+name: Ubuntu-Attack-Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ubuntu-ssh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3600
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Cai dat vu khi
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y hping3 nmap ffmpeg tailscale
+          echo "Vũ khí đã sẵn sàng để vả camera!"
+
+      - name: Ket noi Tailscale
+        run: |
+          # Dùng chìa khóa Secrets để vào mạng Tailscale
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=ubuntu-epyc-runner
+          
+          # Lấy IP Tailscale
+          TS_IP=$(tailscale ip -4)
+          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
+          echo "IP Tailscale của bạn là: $TS_IP"
+
+      - name: Thiet lap SSH Password
+        run: |
+          # Đặt mật khẩu cho user 'runner' để bro có thể SSH vào
+          # Mật khẩu mặc định tôi đặt là: 123456 (Bro có thể đổi)
+          echo "runner:123456" | sudo chpasswd
+          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo systemctl restart ssh
+
+      - name: Duy tri phao dai (Maintain Connection)
+        run: |
+          echo "=== THÔNG TIN KẾT NỐI UBUNTU ==="
+          echo "IP Address: $TAILSCALE_IP"
+          echo "Username: runner"
+          echo "Password: 123456"
+          echo "================================"
+          
+          # Giữ máy ảo chạy trong 6 tiếng
+          while true; do
+            echo "[$(date)] Ubuntu Active - Đang đợi lệnh nã đạn..."
+            sleep 300
+          done
+          
