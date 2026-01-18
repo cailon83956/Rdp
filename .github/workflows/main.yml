@@ -1,48 +1,40 @@
-name: Ubuntu-Attack-Server
+name: Debug with SSH (tmate + Tailscale via Auth Key)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Chạy thủ công từ tab Actions
 
 jobs:
-  ubuntu-ssh:
+  debug:
     runs-on: ubuntu-latest
-    timeout-minutes: 3600
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Cai dat vu khi
-        run: |
-          sudo apt-get update
-          # Đã loại bỏ tailscale khỏi đây để tránh lỗi "Unable to locate package"
-          sudo apt-get install -y hping3 nmap ffmpeg
-          echo "Súng ống hping3 và nmap đã nạp đạn xong!"
-
-      - name: Ket noi Tailscale
-        uses: tailscale/github-action@v2
+      # Kết nối Tailscale dùng auth key (TAILSCALE_AUTH_KEY)
+      - name: Connect to Tailscale network (using Auth Key)
+        uses: tailscale/github-action@v4
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}   # Secret tên TAILSCALE_AUTH_KEY
+          tags: tag:ci-github                          # Thay bằng tag bạn gắn cho key
+          # Optional: ping máy trong tailnet để chờ kết nối ổn định (thay IP/hostname)
+          ping: 100.x.x.x, ten-may.tailnet.ts.net
+          # statedir: /tmp/tailscale-state            # Uncomment nếu dùng Tailnet Lock
 
-      - name: Thiet lap mat khau SSH
+      # Kiểm tra Tailscale đã up và kết nối OK (optional, debug)
+      - name: Check Tailscale status
         run: |
-          # Đặt mật khẩu là 123456 để bro đăng nhập từ Termux cho lẹ
-          echo "runner:123456" | sudo chpasswd
-          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
-          sudo systemctl restart ssh
+          tailscale status
+          tailscale ip -4
+          tailscale ping 100.x.x.x   # ping máy bạn để test kết nối
 
-      - name: Duy tri phao dai (Maintain Connection)
-        run: |
-          # Lấy IP Tailscale tự động để bro nhìn cho dễ
-          TS_IP=$(tailscale ip -4)
-          echo "=== THÔNG TIN KẾT NỐI UBUNTU ==="
-          echo "Địa chỉ IP: $TS_IP"
-          echo "Tài khoản: runner"
-          echo "Mật khẩu: 123456"
-          echo "================================"
-          
-          while true; do
-            echo "[$(date)] Ubuntu đang online - Đang đợi bro nã đạn..."
-            sleep 300
-          done
-          
+      # Setup tmate session để SSH debug trực tiếp
+      - name: Setup tmate session (SSH debug)
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true   # Chỉ bạn (người trigger) mới connect được
+          detached: false               # Giữ job chờ bạn connect và debug
+          # timeout-minutes: 0          # Uncomment nếu muốn session kéo dài (max 6h job)
+
+      # Optional: step chạy sau khi bạn debug xong (nếu cần)
+      # - name: Example after debug
+      #   run: echo "Debug xong, runner sẽ disconnect Tailscale tự động"
