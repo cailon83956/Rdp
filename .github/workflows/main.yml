@@ -7,7 +7,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      DO_TOKEN: ${{ secrets.DO_TOKEN }}
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
       SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
 
@@ -17,16 +16,11 @@ jobs:
       IMAGE: ubuntu-22-04-x64
 
     steps:
-      - name: Install doctl (official apt)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ca-certificates curl gnupg
-          sudo install -m 0755 -d /etc/apt/keyrings
-          curl -fsSL https://repos.digitalocean.com/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/digitalocean.gpg
-          echo "deb [signed-by=/etc/apt/keyrings/digitalocean.gpg] https://repos.digitalocean.com/apt main main" | sudo tee /etc/apt/sources.list.d/digitalocean.list
-          sudo apt-get update
-          sudo apt-get install -y doctl
-          doctl version
+      # ✅ CÀI DOCTL BẰNG OFFICIAL ACTION
+      - name: Install doctl (DigitalOcean official action)
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DO_TOKEN }}
 
       - name: Build cloud-init user-data
         run: |
@@ -50,9 +44,6 @@ jobs:
 
       - name: Create droplet
         run: |
-          export DIGITALOCEAN_ACCESS_TOKEN="${DO_TOKEN}"
-          doctl auth init -t "$DIGITALOCEAN_ACCESS_TOKEN"
-
           doctl compute droplet create ${DROPLET_NAME} \
             --region ${REGION} \
             --size ${SIZE} \
