@@ -15,38 +15,34 @@ jobs:
       - name: Cai dat vu khi
         run: |
           sudo apt-get update
-          sudo apt-get install -y hping3 nmap ffmpeg tailscale
-          echo "Vũ khí đã sẵn sàng để vả camera!"
+          # Đã loại bỏ tailscale khỏi đây để tránh lỗi "Unable to locate package"
+          sudo apt-get install -y hping3 nmap ffmpeg
+          echo "Súng ống hping3 và nmap đã nạp đạn xong!"
 
       - name: Ket noi Tailscale
-        run: |
-          # Dùng chìa khóa Secrets để vào mạng Tailscale
-          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=ubuntu-epyc-runner
-          
-          # Lấy IP Tailscale
-          TS_IP=$(tailscale ip -4)
-          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
-          echo "IP Tailscale của bạn là: $TS_IP"
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
 
-      - name: Thiet lap SSH Password
+      - name: Thiet lap mat khau SSH
         run: |
-          # Đặt mật khẩu cho user 'runner' để bro có thể SSH vào
-          # Mật khẩu mặc định tôi đặt là: 123456 (Bro có thể đổi)
+          # Đặt mật khẩu là 123456 để bro đăng nhập từ Termux cho lẹ
           echo "runner:123456" | sudo chpasswd
           sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
           sudo systemctl restart ssh
 
       - name: Duy tri phao dai (Maintain Connection)
         run: |
+          # Lấy IP Tailscale tự động để bro nhìn cho dễ
+          TS_IP=$(tailscale ip -4)
           echo "=== THÔNG TIN KẾT NỐI UBUNTU ==="
-          echo "IP Address: $TAILSCALE_IP"
-          echo "Username: runner"
-          echo "Password: 123456"
+          echo "Địa chỉ IP: $TS_IP"
+          echo "Tài khoản: runner"
+          echo "Mật khẩu: 123456"
           echo "================================"
           
-          # Giữ máy ảo chạy trong 6 tiếng
           while true; do
-            echo "[$(date)] Ubuntu Active - Đang đợi lệnh nã đạn..."
+            echo "[$(date)] Ubuntu đang online - Đang đợi bro nã đạn..."
             sleep 300
           done
           
