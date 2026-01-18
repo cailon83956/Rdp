@@ -1,58 +1,51 @@
-name: Create Ubuntu droplet with Tailscale
+name: Ubuntu SSH via Tailscale
+
 on:
   workflow_dispatch:
 
 jobs:
-  create-droplet:
+  ssh:
     runs-on: ubuntu-latest
-
-    env:
-      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
-      SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
-
-      DROPLET_NAME: github-tailscale-1
-      REGION: sgp1
-      SIZE: s-1vcpu-1gb
-      IMAGE: ubuntu-22-04-x64
+    timeout-minutes: 360
 
     steps:
-      # ✅ CÀI DOCTL BẰNG OFFICIAL ACTION
-      - name: Install doctl (DigitalOcean official action)
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DO_TOKEN }}
-
-      - name: Build cloud-init user-data
+      - name: Install SSH
         run: |
-          cat > user-data.yaml <<YML
-          #cloud-config
-          users:
-            - name: ubuntu
-              sudo: ALL=(ALL) NOPASSWD:ALL
-              shell: /bin/bash
-              ssh_authorized_keys:
-                - ${SSH_PUBLIC_KEY}
+          sudo apt update
+          sudo apt install -y openssh-server
+          sudo systemctl enable ssh
+          sudo systemctl start ssh
 
-          runcmd:
-            - apt-get update
-            - apt-get install -y curl gnupg apt-transport-https openssh-server
-            - curl -fsSL https://tailscale.com/install.sh | sh
-            - systemctl enable --now tailscaled
-            - tailscale up --authkey ${TAILSCALE_AUTHKEY} --hostname ${DROPLET_NAME}
-            - systemctl enable --now ssh
-          YML
-
-      - name: Create droplet
+      - name: Create SSH user
         run: |
-          doctl compute droplet create ${DROPLET_NAME} \
-            --region ${REGION} \
-            --size ${SIZE} \
-            --image ${IMAGE} \
-            --user-data-file user-data.yaml \
-            --tag-names tailscale,github-action \
-            --wait \
-            --format ID,Name,PublicIPv4
+          PASSWORD="pass$(shuf -i1000-9999 -n1)"
+          sudo useradd -m -s /bin/bash sshuser
+          echo "sshuser:$PASSWORD" | sudo chpasswd
+          sudo usermod -aG sudo sshuser
+          echo "SSH_USER=sshuser" >> $GITHUB_ENV
+          echo "SSH_PASS=$PASSWORD" >> $GITHUB_ENV
 
-      - name: Show droplet list
+      - name: Install Tailscale
         run: |
-          doctl compute droplet list --tag-name tailscale --format ID,Name,PublicIPv4,Status
+          curl -fsSL https://tailscale.com/install.sh | sh
+          sudo systemctl enable --now tailscaled
+
+      - name: Connect to Tailscale
+        run: |
+          sudo tailscale up \
+            --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} \
+            --hostname=gh-ubuntu-$GITHUB_RUN_ID
+
+          tailscale ip -4 | head -n1 | sed 's/^/TS_IP=/' >> $GITHUB_ENV
+
+      - name: Show SSH info
+        run: |
+          echo "=============================="
+          echo "SSH IP   : $TS_IP"
+          echo "User     : $SSH_USER"
+          echo "Password : $SSH_PASS"
+          echo "=============================="
+
+      - name: Keep Alive
+        run: |
+          while true; do sleep 300; done
