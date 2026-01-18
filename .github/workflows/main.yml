@@ -5,20 +5,27 @@ on:
 jobs:
   create-droplet:
     runs-on: ubuntu-latest
+
     env:
       DO_TOKEN: ${{ secrets.DO_TOKEN }}
-      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}   # ✅ ĐÚNG TÊN
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
       SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+
       DROPLET_NAME: github-tailscale-1
       REGION: sgp1
       SIZE: s-1vcpu-1gb
       IMAGE: ubuntu-22-04-x64
 
     steps:
-      - name: Install doctl
+      - name: Install doctl (official apt)
         run: |
-          curl -sL https://github.com/digitalocean/doctl/releases/latest/download/doctl-1.93.0-linux-amd64.tar.gz | tar -xz
-          sudo mv doctl /usr/local/bin/doctl
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl gnupg
+          sudo install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://repos.digitalocean.com/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/digitalocean.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/digitalocean.gpg] https://repos.digitalocean.com/apt main main" | sudo tee /etc/apt/sources.list.d/digitalocean.list
+          sudo apt-get update
+          sudo apt-get install -y doctl
           doctl version
 
       - name: Build cloud-init user-data
@@ -41,10 +48,11 @@ jobs:
             - systemctl enable --now ssh
           YML
 
-      - name: Create droplet (doctl)
+      - name: Create droplet
         run: |
           export DIGITALOCEAN_ACCESS_TOKEN="${DO_TOKEN}"
           doctl auth init -t "$DIGITALOCEAN_ACCESS_TOKEN"
+
           doctl compute droplet create ${DROPLET_NAME} \
             --region ${REGION} \
             --size ${SIZE} \
